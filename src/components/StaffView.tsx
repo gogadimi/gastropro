@@ -329,7 +329,7 @@ const StaffView: React.FC<StaffViewProps> = ({
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="flex gap-1">
-                        {Object.entries(member.permissions).map(([key, value]) => (
+                        {Object.entries(member.permissions || {}).map(([key, value]) => (
                           value && (
                             <div key={key} className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600" title={key}>
                               <Check size={12} />

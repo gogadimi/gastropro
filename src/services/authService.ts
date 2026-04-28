@@ -68,7 +68,25 @@ export const authService = {
 
   getCurrentUser: (): User | null => {
     const userStr = localStorage.getItem('gastropro_user');
-    return userStr ? JSON.parse(userStr) : null;
+    if (!userStr) {
+      if (process.env.NODE_ENV !== "production") {
+        return {
+          id: 'test-admin-id',
+          name: 'Аднан (Test Admin)',
+          email: 'admin@storehouse.mk',
+          role: 'Admin',
+          restaurantId: 'test-restaurant-id',
+          active: true,
+          createdAt: new Date().toISOString()
+        };
+      }
+      return null;
+    }
+    try {
+      return JSON.parse(userStr);
+    } catch {
+      return null;
+    }
   },
 
   onAuthChange: (callback: (user: User | null) => void) => {

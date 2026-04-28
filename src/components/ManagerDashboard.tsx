@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User } from '../types';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -31,16 +31,16 @@ import {
 import { cn } from '../utils/cn';
 
 const ManagerDashboard = () => {
-  const { employees, transactions, products, fetchEmployees, fetchInventory, fetchProducts } = useStore();
+  const { employees, transactions, products, loading, fetchEmployees, fetchInventory, fetchProducts } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<User | null>(null);
   const { t } = useTranslation();
 
   useEffect(() => {
-    if (!(employees || []).length) fetchEmployees();
-    if (!(transactions || []).length) fetchInventory();
-    if (!(products || []).length) fetchProducts();
-  }, [(employees || []).length, (transactions || []).length, (products || []).length, fetchEmployees, fetchInventory, fetchProducts]);
+    if (employees.length === 0 && !loading.employees) fetchEmployees();
+    if (transactions.length === 0 && !loading.inventory) fetchInventory();
+    if (products.length === 0 && !loading.products) fetchProducts();
+  }, [employees.length, transactions.length, products.length, loading.employees, loading.inventory, loading.products, fetchEmployees, fetchInventory, fetchProducts]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -49,6 +49,7 @@ const ManagerDashboard = () => {
     role: 'Warehouse Worker' as 'Admin' | 'Manager' | 'Warehouse Worker',
     active: true
   });
+  const [searchTerm, setSearchTerm] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,15 +86,52 @@ const ManagerDashboard = () => {
   };
 
   // Analytics Data
-  const stockValue = (products || []).reduce((acc, p) => acc + (p.currentStock * (p.purchasePrice || 0)), 0);
-  const lowStockCount = (products || []).filter(p => p.currentStock <= p.minStock).length;
+  const stockValue = useMemo(() => {
+    return products.reduce((acc, p) => acc + (p.currentStock * (p.purchasePrice || 0)), 0);
+  }, [products]);
+
+  const lowStockCount = useMemo(() => {
+    return products.filter(p => p.currentStock <= p.minStock).length;
+  }, [products]);
   
-  const transactionsByType = [
-    { name: t('receipt'), value: (transactions || []).filter(t => t.type === 'receipt').length },
-    { name: t('input'), value: (transactions || []).filter(t => t.type === 'input').length },
-    { name: t('output'), value: (transactions || []).filter(t => t.type === 'output').length },
-    { name: t('check'), value: (transactions || []).filter(t => t.type === 'inventory_check').length },
-  ];
+  const transactionsByType = useMemo(() => {
+    const counts = { receipt: 0, input: 0, output: 0, inventory_check: 0 };
+    transactions.forEach(t => {
+      if (counts[t.type as keyof typeof counts] !== undefined) {
+        counts[t.type as keyof typeof counts]++;
+      }
+    });
+    return [
+      { name: t('receipt'), value: counts.receipt },
+      { name: t('input'), value: counts.input },
+      { name: t('output'), value: counts.output },
+      { name: t('check'), value: counts.inventory_check },
+    ];
+  }, [transactions, t]);
+
+  const mostActiveStaff = useMemo(() => {
+    if (!transactions.length) return null;
+    const userCounts: Record<string, number> = {};
+    transactions.forEach(t => {
+      if (t.userId) {
+        userCounts[t.userId] = (userCounts[t.userId] || 0) + 1;
+      }
+    });
+    const mostActiveId = Object.keys(userCounts).sort((a, b) => userCounts[b] - userCounts[a])[0];
+    if (!mostActiveId) return null;
+    const emp = employees.find(e => e.id === mostActiveId);
+    return {
+      name: emp ? emp.name : t('unknown'),
+      count: userCounts[mostActiveId]
+    };
+  }, [transactions, employees, t]);
+
+  const filteredEmployees = useMemo(() => {
+    return employees.filter(emp => 
+      emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      emp.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [employees, searchTerm]);
 
   const COLORS = ['#3b82f6', '#10b981', '#f43f5e', '#f59e0b'];
 
@@ -153,7 +191,7 @@ const ManagerDashboard = () => {
               {t('staff')}
             </span>
           </div>
-          <p className="text-3xl font-black text-slate-900 mb-1">{(employees || []).length}</p>
+          <p className="text-3xl font-black text-slate-900 mb-1">{employees.length}</p>
           <p className="text-sm text-slate-500 font-medium">{t('active_team_members')}</p>
         </div>
 
@@ -166,7 +204,7 @@ const ManagerDashboard = () => {
               {t('activity')}
             </span>
           </div>
-          <p className="text-3xl font-black text-slate-900 mb-1">{(transactions || []).length}</p>
+          <p className="text-3xl font-black text-slate-900 mb-1">{transactions.length}</p>
           <p className="text-sm text-slate-500 font-medium">{t('total_movements')}</p>
         </div>
       </div>
@@ -183,13 +221,19 @@ const ManagerDashboard = () => {
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                  <input type="text" className="input py-2 pl-10 text-sm w-48" placeholder={t('search')} />
+                  <input 
+                    type="text" 
+                    className="input py-2 pl-10 text-sm w-48" 
+                    placeholder={t('search')} 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              {(employees || []).map((emp) => (
+              {filteredEmployees.map((emp) => (
                 <div key={emp.id} className="flex items-center justify-between p-4 bg-slate-50/50 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all group">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center text-xl font-black text-blue-600 border border-slate-100">
@@ -230,7 +274,15 @@ const ManagerDashboard = () => {
                     >
                       <Edit2 size={20} />
                     </button>
-                    <button className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                    <button 
+                      onClick={() => {
+                        if (window.confirm(t('confirm_delete'))) {
+                          authService.updateUser(emp.id, { active: false }).then(() => fetchEmployees());
+                          toast.success(t('status_updated'));
+                        }
+                      }}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                    >
                       <Trash2 size={20} />
                     </button>
                   </div>
@@ -271,13 +323,15 @@ const ManagerDashboard = () => {
               </ResponsiveContainer>
             </div>
             <div className="mt-8 space-y-4">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{t('most_active_staff')}</p>
-                <div className="flex items-center justify-between">
-                  <p className="font-bold text-slate-900">Никола Т.</p>
-                  <span className="text-sm font-black text-blue-600">42 {t('actions')}</span>
+              {mostActiveStaff && (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{t('most_active_staff')}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-slate-900">{mostActiveStaff.name}</p>
+                    <span className="text-sm font-black text-blue-600">{mostActiveStaff.count} {t('actions')}</span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
